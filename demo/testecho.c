@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include "wav_io.h"
 
 
 #define NN 128
@@ -31,6 +32,26 @@ int main(int argc, char **argv)
    ref_fd  = fopen(argv[1],  "rb");
    e_fd    = fopen(argv[3], "wb");
 
+   // parse wav
+   WAV_HEADER ref_header;
+   WAV_HEADER echo_header;
+   
+   if (read_header(&ref_header, ref_fd) != 0 || read_header(&echo_header, echo_fd) != 0) {
+      fprintf(stderr, "fail to parse wav header\n");
+      exit(1);
+   }
+
+   if (ref_header.format.sample_per_sec != echo_header.format.sample_per_sec ||
+       ref_header.format.channels != 1 ||
+       echo_header.format.channels != 1) {
+      fprintf(stderr, "not support wav format\n");
+      exit(1);
+   }
+
+   write_header(&ref_header, e_fd);
+
+   sampleRate = ref_header.format.sample_per_sec;
+
    st = speex_echo_state_init(NN, TAIL);
    den = speex_preprocess_state_init(NN, sampleRate);
    speex_echo_ctl(st, SPEEX_ECHO_SET_SAMPLING_RATE, &sampleRate);
@@ -38,11 +59,16 @@ int main(int argc, char **argv)
 
    while (!feof(ref_fd) && !feof(echo_fd))
    {
-      fread(ref_buf, sizeof(short), NN, ref_fd);
-      fread(echo_buf, sizeof(short), NN, echo_fd);
+      // fread(ref_buf, sizeof(short), NN, ref_fd);
+      // fread(echo_buf, sizeof(short), NN, echo_fd);
+      read_samples(ref_buf, NN, &ref_header, ref_fd);
+      read_samples(echo_buf, NN, &echo_header, echo_fd);
+
       speex_echo_cancellation(st, ref_buf, echo_buf, e_buf);
       speex_preprocess_run(den, e_buf);
-      fwrite(e_buf, sizeof(short), NN, e_fd);
+
+      // fwrite(e_buf, sizeof(short), NN, e_fd);
+      write_samples(e_buf, NN, &ref_header, e_fd);
    }
    speex_echo_state_destroy(st);
    speex_preprocess_state_destroy(den);
